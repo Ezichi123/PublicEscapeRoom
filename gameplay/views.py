@@ -1,51 +1,114 @@
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
+import json
+from django.http import JsonResponse
+from django.utils import timezone
+from django.shortcuts import get_object_or_404
 
-from challenges.models import Challenge
-from challenges.serializers import ChallengeSerializer
+from challenges.models import Challenge, Puzzle
+from gameplay.models import GameSession
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+
+from .game_logic import (
+    check_answer,
+    update_progress,
+    get_hint,
+    can_reveal_answer,
+    get_next_puzzle,
+    check_completion,
+    finalize_run,
+    reveal_answer
+)
 
 
-@api_view(["GET"])
-def start_game(request):
-    return Response({"message": "game started"})
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def start_session_view(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "login required"}, status=401)
 
+    challenge_id = request.GET.get("challenge_id")
+    challenge = get_object_or_404(Challenge, id=challenge_id)
 
-@api_view(["GET"])
+    first_puzzle = challenge.puzzles.order_by("order").first()
+    if not first_puzzle:
+        return JsonResponse({"error": "No puzzles"}, status=400)
+
+    session = GameSession.objects.create(
+        user=request.user,
+        challenge=challenge,
+        start_time=timezone.now(),
+        current_puzzle=first_puzzle,
+        attempts=0,
+        completed=False
+    )
+
+    return JsonResponse({
+        "session_id": session.id,
+        "puzzle_id": first_puzzle.id
+    })
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def submit_answer(request):
-    return Response({"message": "submit endpoint"})
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
 
-
-@api_view(["GET"])
-def get_hint(request):
-    return Response({"hint": "example hint"})
-
-
-@api_view(["GET"])
-def reveal_solution(request):
-    return Response({"solution": "example solution"})
-
-
-@api_view(["GET"])
-def list_challenges(request):
-    challenges = Challenge.objects.all()
-    serializer = ChallengeSerializer(challenges, many=True)
-    return Response(serializer.data)
-
-
-@api_view(["POST"])
-def create_challenge(request):
-    serializer = ChallengeSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data)
-    return Response(serializer.errors, status=400)
-
-@api_view(["GET"])
-def get_challenge(request, pk):
     try:
-        challenge = Challenge.objects.get(pk=pk)
-    except Challenge.DoesNotExist:
-        return Response({"error": "Not found"}, status=404)
+        data = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "invalid JSON"}, status=400)
 
-    serializer = ChallengeSerializer(challenge)
-    return Response(serializer.data)
+    session = get_object_or_404(GameSession, id=data["session_id"])
+
+    if session.completed:
+        return JsonResponse({"error": "session completed"}, status=400)
+
+    puzzle = session.current_puzzle
+    answer = data["answer"]
+
+    correct = check_answer(answer, puzzle)
+
+    session.attempts += 1
+    session.save()
+
+    hint = get_hint(puzzle, session.attempts)
+
+    next_puzzle = None
+
+    if correct:
+        next_puzzle = get_next_puzzle(puzzle, answer)
+
+        if next_puzzle:
+            session.current_puzzle = next_puzzle
+        else:
+            session.completed = True
+
+        session.save()
+
+    return JsonResponse({
+        "correct": correct,
+        "hint": hint,
+        "completed": session.completed,
+        "puzzle_id": session.current_puzzle.id if session.current_puzzle else None
+    })
+
+
+def get_hint_view(request):
+    puzzle = get_object_or_404(Puzzle, id=request.GET.get("puzzle_id"))
+    attempts = int(request.GET.get("attempts", 0))
+
+    return JsonResponse({
+        "hint": get_hint(puzzle, attempts)
+    })
+
+
+def reveal_answer_view(request):
+    data = json.loads(request.body.decode("utf-8"))
+
+    puzzle = get_object_or_404(Puzzle, id=data["puzzle_id"])
+    session = get_object_or_404(GameSession, id=data["session_id"])
+
+    return JsonResponse({
+        "answer": reveal_answer(puzzle, session)
+    })
