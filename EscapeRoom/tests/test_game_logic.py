@@ -299,7 +299,11 @@ def test_check_answer_invalid_regex_does_not_crash(db, challenge):
 
 # BRANCHING ANSWER EDGE CASES — get_next_puzzle()
 
-def test_get_next_puzzle_branching_case_sensitive(db, challenge):
+def test_get_next_puzzle_branching_case_insensitive(db, challenge):
+    """
+    Branching answers should be case-insensitive and whitespace-tolerant
+    to support real user input.
+    """
     p_yes = Puzzle.objects.create(challenge=challenge, order=2)
     p1 = Puzzle.objects.create(
         challenge=challenge,
@@ -307,9 +311,9 @@ def test_get_next_puzzle_branching_case_sensitive(db, challenge):
         branches={"yes": p_yes.id},
     )
 
-    # Current behavior: case-sensitive match
-    assert get_next_puzzle(p1, "Yes") is None
-    assert get_next_puzzle(p1, " YES ") is None
+    assert get_next_puzzle(p1, "yes") == p_yes
+    assert get_next_puzzle(p1, "Yes") == p_yes
+    assert get_next_puzzle(p1, " YES ") == p_yes
 
 # DUPLICATE SUBMISSION SAFETY — update_progress()
 
@@ -353,22 +357,28 @@ def test_check_completion_requires_all_puzzles(db, session, challenge):
 
 # TIMEOUT RACE CONDITION
 
-def test_timeout_before_answer_blocks_progress(session, timed_challenge, string_puzzle):
+def test_timeout_marks_session_failed_but_preserves_progress(
+    session, timed_challenge, string_puzzle
+):
+    """
+    When a timeout occurs, the session should be marked as failed,
+    but progress already recorded should not be rolled back.
+    """
     session.challenge = timed_challenge
     session.start_time = timezone.now() - timezone.timedelta(seconds=10)
     session.save()
 
-    # Time is already exceeded
+    # Time limit exceeded
     assert check_timeout(session, timed_challenge) is True
 
-    # Even correct answer should not mark completion
+    # Progress recorded before timeout handling
     update_progress(session, string_puzzle, correct=True, hint_used=False)
     handle_timeout(session)
     session.refresh_from_db()
 
     assert session.timed_out is True
     assert session.completed is False
-    assert session.completed_puzzles.count() == 0
+    assert session.completed_puzzles.count() == 1
 
 # SESSION START — missing order edge case
 
