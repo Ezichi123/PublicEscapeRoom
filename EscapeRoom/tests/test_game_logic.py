@@ -282,3 +282,99 @@ def test_start_session_creates_session_and_returns_first_puzzle(user, challenge)
     assert session.user == user
     assert session.attempts == 0
     assert puzzle == first
+
+# REGEX EDGE CASES — check_answer()
+
+def test_check_answer_invalid_regex_does_not_crash(db, challenge):
+    puzzle = Puzzle.objects.create(
+        challenge=challenge,
+        match_type="regex",
+        correct_answer="(",  # invalid regex pattern
+        flow_type="linear",
+        order=1,
+    )
+
+    # Should fail gracefully, not raise re.error
+    assert check_answer("anything", puzzle) is False
+
+# BRANCHING ANSWER EDGE CASES — get_next_puzzle()
+
+def test_get_next_puzzle_branching_case_sensitive(db, challenge):
+    p_yes = Puzzle.objects.create(challenge=challenge, order=2)
+    p1 = Puzzle.objects.create(
+        challenge=challenge,
+        flow_type="branching",
+        branches={"yes": p_yes.id},
+    )
+
+    # Current behavior: case-sensitive match
+    assert get_next_puzzle(p1, "Yes") is None
+    assert get_next_puzzle(p1, " YES ") is None
+
+# DUPLICATE SUBMISSION SAFETY — update_progress()
+
+def test_update_progress_same_puzzle_twice(session, string_puzzle):
+    update_progress(session, string_puzzle, correct=True, hint_used=False)
+    update_progress(session, string_puzzle, correct=True, hint_used=False)
+    session.refresh_from_db()
+
+    # Attempts increment regardless
+    assert session.attempts == 2
+
+    # Puzzle should only appear once
+    assert session.completed_puzzles.count() == 1
+
+# REVEAL ANSWER — idempotency
+
+def test_reveal_answer_already_completed_puzzle(session, string_puzzle):
+    session.completed_puzzles.add(string_puzzle)
+    session.revealed_answers = 0
+    session.save()
+
+    answer = reveal_answer(string_puzzle, session)
+    session.refresh_from_db()
+
+    assert answer == "OpenSesame"
+    assert session.completed_puzzles.count() == 1
+    assert session.revealed_answers == 1
+
+# COMPLETION LOGIC — multiple puzzles
+
+def test_check_completion_requires_all_puzzles(db, session, challenge):
+    p1 = Puzzle.objects.create(challenge=challenge, order=1)
+    p2 = Puzzle.objects.create(challenge=challenge, order=2)
+
+    session.completed_puzzles.add(p1)
+
+    assert check_completion(session, challenge) is False
+
+    session.completed_puzzles.add(p2)
+    assert check_completion(session, challenge) is True
+
+# TIMEOUT RACE CONDITION
+
+def test_timeout_before_answer_blocks_progress(session, timed_challenge, string_puzzle):
+    session.challenge = timed_challenge
+    session.start_time = timezone.now() - timezone.timedelta(seconds=10)
+    session.save()
+
+    # Time is already exceeded
+    assert check_timeout(session, timed_challenge) is True
+
+    # Even correct answer should not mark completion
+    update_progress(session, string_puzzle, correct=True, hint_used=False)
+    handle_timeout(session)
+    session.refresh_from_db()
+
+    assert session.timed_out is True
+    assert session.completed is False
+    assert session.completed_puzzles.count() == 0
+
+# SESSION START — missing order edge case
+
+def test_start_session_skips_missing_orders(user, challenge):
+    Puzzle.objects.create(challenge=challenge, order=2)
+
+    session, puzzle = start_session(user, challenge)
+
+    assert puzzle.order == 2
