@@ -1,0 +1,15 @@
+# Core framework
+Django>=4.2,<6.0
+
+# Django REST Framework
+djangorestframework>=3.14
+
+# JWT authentication
+djangorestframework-simplejwt>=5.3
+
+# CORS handling
+django-cors-headers>=4.3
+
+# Testing
+pytest>=8.0
+pytest-django>=4.8
