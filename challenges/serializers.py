@@ -13,8 +13,10 @@ class PuzzleSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Puzzle
-        fields = ["id", "question", "match_type", "correct_answer",
-                  "flow_type", "next_puzzle", "branches", "order", "hints"]
+        fields = ['id', 'question', 'match_type', 'correct_answer', 'flow_type',
+          'next_puzzle', 'branches', 'order', 'hints', 'options',
+          'image_url', 'flavor_text', 'combo_length','object_name', 'object_icon', 'object_position',
+            'reward_item', 'reward_icon', 'unlock_after_order']
 
 
 class ChallengeSerializer(serializers.ModelSerializer):
@@ -23,5 +25,8 @@ class ChallengeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Challenge
-        fields = ["id", "title", "description", "timed_mode",
-                  "time_limit_seconds", "created_at", "creator", "puzzles"]
+        fields = ["id", "title", "description", "scene", "timed_mode",
+                  "time_limit_seconds", "created_at", "creator", "puzzles", "theme",
+                  "is_featured", "is_daily"]
+        
+        

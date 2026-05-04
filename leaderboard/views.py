@@ -21,17 +21,27 @@ def leaderboard_view(request, challenge_pk):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def submit_score(request):
-    data = request.data
-    challenge = get_object_or_404(Challenge, pk=data.get("challenge_id"))
+    from gameplay.models import GameSession
 
-    # Update existing entry if user already has one, otherwise create
+    session_id = request.data.get("session_id")
+    if not session_id:
+        return Response({"error": "session_id required"}, status=400)
+
+    session = get_object_or_404(GameSession, pk=session_id, user=request.user)
+
+    if not session.completed:
+        return Response({"error": "Session not completed"}, status=400)
+
+    if session.revealed_answers and session.revealed_answers > 0:
+        return Response({"error": "Cannot submit — answer was revealed"}, status=403)
+
     entry, created = LeaderboardEntry.objects.update_or_create(
         user=request.user,
-        challenge=challenge,
+        challenge=session.challenge,
         defaults={
-            "total_time_seconds": data.get("total_time_seconds", 0),
-            "attempts": data.get("attempts", 0),
-            "hints_used": data.get("hints_used", 0),
+            "total_time_seconds": session.total_time_seconds or 0,
+            "attempts": session.attempts or 0,
+            "hints_used": session.hints_used or 0,
         }
     )
     serializer = LeaderboardEntrySerializer(entry)
