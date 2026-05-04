@@ -37,37 +37,24 @@ REVEAL_ANSWER_THRESHOLD = 8
 # ---------------------------------------------------------------------------
 
 def check_answer(submitted: str, puzzle) -> bool:
-    """
-    Validates a user's submitted answer against the puzzle's correct answer.
-
-    Supports three match types:
-      - 'string'  : case-insensitive exact text match
-      - 'regex'   : full regex pattern match (pattern stored as correct_answer)
-      - 'numeric' : numeric equality (handles int and float)
-
-    Args:
-        submitted (str): The raw answer string submitted by the user.
-        puzzle (Puzzle):  The Puzzle model instance being answered.
-
-    Returns:
-        bool: True if the answer is correct, False otherwise.
-    """
     if not submitted:
         return False
 
+    # Standardize the user's input
     submitted = submitted.strip()
 
     try:
-        if puzzle.match_type == "string":
+        # String, Multiple Choice, and Combination use text comparison
+        if puzzle.match_type in ["string", "multiple_choice", "combination", "image"]:
             return submitted.lower() == puzzle.correct_answer.strip().lower()
 
         elif puzzle.match_type == "regex":
-            # correct_answer stores the regex pattern
             pattern = puzzle.correct_answer
             return bool(re.fullmatch(pattern, submitted, re.IGNORECASE))
 
         elif puzzle.match_type == "numeric":
-            return float(submitted) == float(puzzle.correct_answer)
+            # Strip spaces from DB answer before converting to float
+            return float(submitted) == float(puzzle.correct_answer.strip())
 
         else:
             logger.warning(f"Unknown match_type '{puzzle.match_type}' on puzzle {puzzle.id}")
@@ -167,26 +154,20 @@ def reveal_answer(puzzle, session) -> str:
 # ---------------------------------------------------------------------------
 
 def get_next_puzzle(current_puzzle, submitted_answer: str = None):
-    """
-    Determines and returns the next puzzle based on the flow type.
-
-    Linear:    Always returns the single designated next puzzle.
-    Branching: Returns a different puzzle depending on the answer given.
-               Branching map is stored as a JSON dict on the puzzle:
-               e.g. {"yes": <puzzle_id>, "no": <puzzle_id>}
-
-    Args:
-        current_puzzle (Puzzle): The puzzle just completed.
-        submitted_answer (str):  The answer the user gave (needed for branching).
-
-    Returns:
-        Puzzle | None: The next Puzzle instance, or None if the room is complete.
-    """
     from challenges.models import Puzzle
 
     if current_puzzle.flow_type == "linear":
-        # next_puzzle is a ForeignKey on the Puzzle model (nullable)
-        return current_puzzle.next_puzzle  # returns None if last puzzle
+        # First try the explicit next_puzzle FK
+        if current_puzzle.next_puzzle:
+            return current_puzzle.next_puzzle
+        
+        # Fall back to finding the next puzzle by order
+        next_puzzle = Puzzle.objects.filter(
+            challenge=current_puzzle.challenge,
+            order__gt=current_puzzle.order
+        ).order_by('order').first()
+        
+        return next_puzzle  # returns None if last puzzle
 
     elif current_puzzle.flow_type == "branching":
         if not submitted_answer:
@@ -194,7 +175,7 @@ def get_next_puzzle(current_puzzle, submitted_answer: str = None):
             return None
 
         branch_key = submitted_answer.strip().lower()
-        branches = current_puzzle.branches  # dict stored as JSONField
+        branches = current_puzzle.branches
 
         next_id = branches.get(branch_key)
         if not next_id:

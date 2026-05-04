@@ -54,20 +54,40 @@ def submit_answer(request):
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
 
-    try:
-        data = json.loads(request.body.decode("utf-8"))
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "invalid JSON"}, status=400)
+    # Use request.data consistently with DRF
+    data = request.data
+    
+    # Validate required fields
+    session_id = data.get("session_id")
+    answer = data.get("answer")
+    
+    if not session_id:
+        return JsonResponse({"error": "session_id required"}, status=400)
+    if not answer:
+        return JsonResponse({"error": "answer required"}, status=400)
 
-    session = get_object_or_404(GameSession, id=data["session_id"])
+    try:
+        session = get_object_or_404(GameSession, id=session_id)
+    except Exception as e:
+        return JsonResponse({"error": "Invalid session"}, status=400)
 
     if session.completed:
         return JsonResponse({"error": "session completed"}, status=400)
 
-    puzzle = session.current_puzzle
-    answer = data["answer"]
+    # Get puzzle - with error handling
+    puzzle_id = data.get('puzzle_id')
+    try:
+        if puzzle_id:
+            puzzle = Puzzle.objects.get(id=puzzle_id)
+        else:
+            puzzle = session.current_puzzle
+    except Puzzle.DoesNotExist:
+        return JsonResponse({"error": "Invalid puzzle_id"}, status=400)
 
-    correct = check_answer(answer, puzzle)
+    try:
+        correct = check_answer(answer, puzzle)
+    except Exception as e:
+        return JsonResponse({"error": f"Check answer failed: {str(e)}"}, status=500)
 
     session.attempts += 1
     session.save()
@@ -77,14 +97,16 @@ def submit_answer(request):
     next_puzzle = None
 
     if correct:
-        next_puzzle = get_next_puzzle(puzzle, answer)
+        try:
+            next_puzzle = get_next_puzzle(puzzle, answer)
 
-        if next_puzzle:
-            session.current_puzzle = next_puzzle
-        else:
-            session.completed = True
-
-        session.save()
+            if next_puzzle:
+                session.current_puzzle = next_puzzle
+                session.save()
+            else:
+                finalize_run(session, session.challenge)
+        except Exception as e:
+            return JsonResponse({"error": f"Progress update failed: {str(e)}"}, status=500)
 
     return JsonResponse({
         "correct": correct,
@@ -93,21 +115,45 @@ def submit_answer(request):
         "puzzle_id": session.current_puzzle.id if session.current_puzzle else None
     })
 
-
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def get_hint_view(request):
-    puzzle = get_object_or_404(Puzzle, id=request.GET.get("puzzle_id"))
-    attempts = int(request.GET.get("attempts", 0))
+    session = get_object_or_404(GameSession, id=request.GET.get("session_id"))
+    puzzle_id = request.GET.get("puzzle_id")
+    
+    if puzzle_id:
+        puzzle = get_object_or_404(Puzzle, id=puzzle_id)
+    else:
+        puzzle = session.current_puzzle
+
+    # Count how many hints already used for this puzzle
+    # We use hints_used on session as a global counter but fetch by level
+    hints_used_for_puzzle = int(request.GET.get("hints_used", 0))
+    next_level = hints_used_for_puzzle + 1
+
+    hint_obj = puzzle.hints.filter(level=next_level).first()
+    hint_text = hint_obj.text if hint_obj else None
+
+    if hint_text:
+        session.hints_used += 1
+        session.save()
 
     return JsonResponse({
-        "hint": get_hint(puzzle, attempts)
+        "hint": hint_text or "No more hints available for this puzzle."
     })
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def reveal_answer_view(request):
-    data = json.loads(request.body.decode("utf-8"))
-
-    puzzle = get_object_or_404(Puzzle, id=data["puzzle_id"])
-    session = get_object_or_404(GameSession, id=data["session_id"])
+    data = request.data  # Use request.data, not json.loads()
+    session_id = data.get("session_id")
+    
+    if not session_id:
+        return JsonResponse({"error": "session_id required"}, status=400)
+        
+    session = get_object_or_404(GameSession, id=session_id)
+    puzzle = session.current_puzzle
 
     return JsonResponse({
         "answer": reveal_answer(puzzle, session)
