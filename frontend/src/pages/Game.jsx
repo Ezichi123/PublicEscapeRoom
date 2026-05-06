@@ -471,11 +471,24 @@ const handleHint = async () => {
     }
   };
 
-  const handleDoorClick = () => {
-    // Cancel any pending auto-close so it can't overwrite 'complete'
-    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+  const handleDoorClick = async () => {
     if (timerRef.current) clearInterval(timerRef.current);
+    
+    // 1. Tell the backend to officially end the session and save the time!
+    if (session) {
+      await apiFetch('/api/submit/', {
+        method: 'POST',
+        body: JSON.stringify({
+          session_id: session.session_id,
+          answer: "__ESCAPED__"
+        }),
+      }).catch(() => {});
+    }
+
+    // 2. Switch to the complete screen
     setView('complete');
+    
+    // 3. Fetch the leaderboard
     apiFetch(`/api/leaderboard/${challengeId}/`)
       .then(r => r.json())
       .then(data => setLeaderboard(data || []))
