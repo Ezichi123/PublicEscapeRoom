@@ -2,8 +2,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = "dev-key"
-
+SECRET_KEY = '53mgx^muug$40y31)cg8$rl7n!94=tmfitl*tz&&%o+_p!^p10'
 DEBUG = True
 
 ALLOWED_HOSTS = []

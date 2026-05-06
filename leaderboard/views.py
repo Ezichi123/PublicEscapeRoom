@@ -22,6 +22,7 @@ def leaderboard_view(request, challenge_pk):
 @permission_classes([IsAuthenticated])
 def submit_score(request):
     from gameplay.models import GameSession
+    from gameplay.game_logic import finalize_run
 
     session_id = request.data.get("session_id")
     if not session_id:
@@ -29,8 +30,19 @@ def submit_score(request):
 
     session = get_object_or_404(GameSession, pk=session_id, user=request.user)
 
+    # If session wasn't finalized properly, finalize it now
     if not session.completed:
-        return Response({"error": "Session not completed"}, status=400)
+        all_puzzle_ids = set(
+            session.challenge.puzzles.values_list('id', flat=True)
+        )
+        completed_ids = set(
+            session.completed_puzzles.values_list('id', flat=True)
+        )
+        if all_puzzle_ids == completed_ids:
+            finalize_run(session, session.challenge)
+            session.refresh_from_db()
+        else:
+            return Response({"error": "Session not completed"}, status=400)
 
     if session.revealed_answers and session.revealed_answers > 0:
         return Response({"error": "Cannot submit — answer was revealed"}, status=403)
