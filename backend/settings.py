@@ -10,8 +10,6 @@ SECRET_KEY = "dev-key"
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['https://escape-room-backend-7li4.onrender.com']
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -44,7 +42,15 @@ MIDDLEWARE = [
 
 CORS_ALLOW_ALL_ORIGINS = False
 
-CSRF_TRUSTED_ORIGINS = ["https://escape-room-frontend-etz4.onrender.com"]
+CORS_ALLOWED_ORIGINS = [
+    'https://escape-room-frontend-etz4.onrender.com',
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://escape-room-frontend-etz4.onrender.com',
+]
+
+ALLOWED_HOSTS = ['escape-room-backend-7li4.onrender.com']
 
 ROOT_URLCONF = "backend.urls"
 
