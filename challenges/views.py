@@ -131,7 +131,7 @@ def hint_create(request, puzzle_pk):
         return Response(serializer.data, status=201)
     return Response(serializer.errors, status=400)
 
-    @api_view(['PUT', 'DELETE'])
+@api_view(['PUT', 'DELETE'])
 def challenge_detail(request, pk):
     for challenge in challenges_store:
         if challenge["id"] == pk:
