@@ -18,6 +18,13 @@ def leaderboard_view(request, challenge_pk):
     return Response(serializer.data)
 
 
+@api_view(['GET'])
+def leaderboard(request):
+    return Response([
+        {"user": "player1", "time": 120},
+        {"user": "player2", "time": 150},
+    ])
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def submit_score(request):
