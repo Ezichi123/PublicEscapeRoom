@@ -8,7 +8,7 @@ export default function Profile() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    apiFetch('/api/users/profile/')
+    apiFetch('/api/auth/profile/')
       .then(r => r.json())
       .then(data => setProfile(data))
 
