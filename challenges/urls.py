@@ -1,11 +1,7 @@
 from django.urls import path
 from . import views
-from django.urls import path
-from .views import challenges_list, challenge_detail
 
 urlpatterns = [
-    path('', challenges_list),
-    path('<int:pk>/', challenge_detail),
     path("", views.challenge_list),
     path("create/", views.challenge_create),
     path("mine/", views.my_challenges),
@@ -15,5 +11,4 @@ urlpatterns = [
     path("<int:challenge_pk>/puzzles/", views.puzzle_create),
     path("puzzles/<int:pk>/", views.puzzle_edit_delete),
     path("puzzles/<int:puzzle_pk>/hints/", views.hint_create),
-    
 ]
